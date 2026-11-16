@@ -1,0 +1,156 @@
+# 1. Terminal/Command Prompt kholain
+# 2. Repo ko clone karein
+git clone https://github.com/USERNAME/video-clipper.git
+cd video-clipper
+
+# 3. Project ki files create karein
+# (a) index.html
+cat > index.html <<'EOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Web Video Clipper</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.9/dist/ffmpeg.min.js"></script>
+</head>
+<body>
+  <main class="container">
+    <h1>🪚 Web Video Clipper</h1>
+
+    <section class="card">
+      <label for="videoFile">Choose a video (≤ 100 MB recommended):</label>
+      <input type="file" id="videoFile" accept="video/*">
+    </section>
+
+    <section class="card" id="previewSection" style="display:none;">
+      <video id="preview" controls></video>
+    </section>
+
+    <section class="card" id="controlsSection" style="display:none;">
+      <label>Start (seconds):
+        <input type="number" id="startSec" min="0" step="0.1" value="0">
+      </label>
+      <label>End (seconds):
+        <input type="number" id="endSec" min="0" step="0.1" value="10">
+      </label>
+      <button id="trimBtn">✂️ Trim & Download</button>
+    </section>
+
+    <section class="card" id="logSection" style="display:none;">
+      <pre id="log"></pre>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
+EOF
+
+# (b) style.css
+cat > style.css <<'EOF'
+html,body{margin:0;padding:0;font-family:system-ui,sans-serif;background:#fafafa;color:#333}
+.container{max-width:720px;margin:auto;padding:1rem}
+h1{text-align:center;margin-bottom:1rem}
+.card{background:#fff;padding:1rem;margin:1rem 0;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+label{display:block;margin:0.5rem 0}
+input[type="file"],input[type="number"]{width:100%;padding:0.5rem;margin-top:0.2rem}
+button{margin-top:1rem;padding:0.6rem 1.2rem;background:#0066ff;color:#fff;border:none;border-radius:4px;cursor:pointer}
+button:disabled{background:#999;cursor:not-allowed}
+pre{background:#111;color:#0f0;padding:0.8rem;border-radius:4px;overflow:auto}
+video{max-width:100%;height:auto;display:block;margin:auto}
+EOF
+
+# (c) script.js
+cat > script.js <<'EOF'
+(async () => {
+  const { createFFmpeg, fetchFile } = FFmpeg;
+  const ffmpeg = createFFmpeg({ log: true });
+
+  const logEl = document.getElementById('log');
+  const log = (msg) => {
+    logEl.textContent += msg + '\n';
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  const fileInput = document.getElementById('videoFile');
+  const preview = document.getElementById('preview');
+  const previewSection = document.getElementById('previewSection');
+  const controlsSection = document.getElementById('controlsSection');
+  const logSection = document.getElementById('logSection');
+  const startInput = document.getElementById('startSec');
+  const endInput = document.getElementById('endSec');
+  const trimBtn = document.getElementById('trimBtn');
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    previewSection.style.display = 'none';
+    controlsSection.style.display = 'none';
+    logSection.style.display = 'none';
+    logEl.textContent = '';
+
+    const url = URL.createObjectURL(file);
+    preview.src = url;
+    previewSection.style.display = 'block';
+    controlsSection.style.display = 'block';
+
+    preview.onloadedmetadata = () => {
+      endInput.value = Math.floor(preview.duration);
+    };
+  });
+
+  trimBtn.addEventListener('click', async () => {
+    const file = fileInput.files[0];
+    if (!file) return alert('Select a video first');
+
+    const start = parseFloat(startInput.value);
+    const end = parseFloat(endInput.value);
+    if (isNaN(start) || isNaN(end) || start >= end) {
+      return alert('Enter a valid start/end time');
+    }
+
+    trimBtn.disabled = true;
+    logSection.style.display = 'block';
+    log('Loading FFmpeg core…');
+    if (!ffmpeg.isLoaded) await ffmpeg.load();
+
+    const nameIn = 'input' + file.name.replace(/\W/g,'');
+    ffmpeg.FS('writeFile', nameIn, await fetchFile(file));
+
+    const nameOut = 'clip_' + Date.now() + '.mp4';
+    const args = ['-y','-i',nameIn,'-ss',`${start}`,'-to',`${end}`,'-c','copy',nameOut];
+    log(`Running: ffmpeg ${args.join(' ')}`);
+    const { rc } = await ffmpeg.run(...args);
+    if (rc !== 0) {
+      log('❌ FFmpeg failed');
+      trimBtn.disabled = false;
+      return;
+    }
+
+    const data = ffmpeg.FS('readFile', nameOut);
+    const blob = new Blob([data.buffer], {type:'video/mp4'});
+    const dlUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = dlUrl;
+    a.download = nameOut;
+    a.click();
+
+    log('✅ Done! File downloaded.');
+    trimBtn.disabled = false;
+  });
+})();
+EOF
+
+# (d) README.md (optional)
+cat > README.md <<'EOF'
+# Web Video Clipper
+
+Pure‑client‑side video‑trimming web app.  
+Upload a video, set start/end seconds, download the clipped MP4 – everything runs in the browser using ffmpeg.wasm.
+
+## How to run locally
+```bash
+python -m http.server 8000   # ya koi bhi static server
+open http://localhost:8000
